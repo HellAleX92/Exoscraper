@@ -42,7 +42,7 @@ namespace ExoscraperGUI
             int targetPage = (int)numSpecificPage.Value;
             if (targetPage <= 0)
             {
-                AppendLog("Bitte eine gültige Seitennummer eingeben.");
+                AppendLog("Please enter a valid Page number.");
                 return;
             }
 
