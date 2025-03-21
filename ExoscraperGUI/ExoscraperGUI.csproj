@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Resources\HTML2JSON.js" />
+    <None Remove="Resources\HTML_downloader.js" />
+    <None Remove="Resources\StoreLink_Extractor.js" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\HTML2JSON.js" />
+    <EmbeddedResource Include="Resources\HTML_downloader.js" />
+    <EmbeddedResource Include="Resources\StoreLink_Extractor.js" />
+  </ItemGroup>
+  
+  <ItemGroup>
+	<Content Include="Resources\node_modules\**\*">
+		<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	</Content>
+  </ItemGroup>
+
+</Project>
