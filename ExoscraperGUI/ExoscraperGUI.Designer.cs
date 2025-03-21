@@ -38,7 +38,11 @@
             numPageLimit = new NumericUpDown();
             label1 = new Label();
             label2 = new Label();
+            numSpecificPage = new NumericUpDown();
+            label3 = new Label();
+            btnDownloadSinglePage = new Button();
             ((System.ComponentModel.ISupportInitialize)numPageLimit).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numSpecificPage).BeginInit();
             SuspendLayout();
             // 
             // btnDownloader
@@ -112,7 +116,7 @@
             // 
             // numPageLimit
             // 
-            numPageLimit.Location = new Point(249, 14);
+            numPageLimit.Location = new Point(236, 14);
             numPageLimit.Maximum = new decimal(new int[] { 250, 0, 0, 0 });
             numPageLimit.Name = "numPageLimit";
             numPageLimit.Size = new Size(58, 23);
@@ -121,7 +125,7 @@
             // label1
             // 
             label1.AutoSize = true;
-            label1.Location = new Point(174, 11);
+            label1.Location = new Point(163, 11);
             label1.Name = "label1";
             label1.Size = new Size(70, 30);
             label1.TabIndex = 8;
@@ -136,11 +140,41 @@
             label2.TabIndex = 9;
             label2.Text = "©2025 by Alex aka SkankHunt42";
             // 
+            // numSpecificPage
+            // 
+            numSpecificPage.Location = new Point(434, 14);
+            numSpecificPage.Maximum = new decimal(new int[] { 999, 0, 0, 0 });
+            numSpecificPage.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+            numSpecificPage.Name = "numSpecificPage";
+            numSpecificPage.Size = new Size(57, 23);
+            numSpecificPage.TabIndex = 0;
+            numSpecificPage.Value = new decimal(new int[] { 1, 0, 0, 0 });
+            // 
+            // label3
+            // 
+            label3.AutoSize = true;
+            label3.Location = new Point(327, 10);
+            label3.Name = "label3";
+            label3.Size = new Size(107, 30);
+            label3.TabIndex = 11;
+            label3.Text = "Missing gamepage\r\nDownload";
+            // 
+            // btnDownloadSinglePage
+            // 
+            btnDownloadSinglePage.Location = new Point(497, 12);
+            btnDownloadSinglePage.Name = "btnDownloadSinglePage";
+            btnDownloadSinglePage.Size = new Size(101, 27);
+            btnDownloadSinglePage.TabIndex = 12;
+            btnDownloadSinglePage.Text = "Download Page";
+            btnDownloadSinglePage.Click += btnDownloadSinglePage_Click;
+            // 
             // ExoscraperGUI
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(802, 606);
+            Controls.Add(label3);
+            Controls.Add(numSpecificPage);
             Controls.Add(label2);
             Controls.Add(label1);
             Controls.Add(numPageLimit);
@@ -151,9 +185,11 @@
             Controls.Add(btnXtractor);
             Controls.Add(btnHTML2JSON);
             Controls.Add(btnDownloader);
+            Controls.Add(btnDownloadSinglePage);
             Name = "ExoscraperGUI";
             Text = "ExoScraper GUI";
             ((System.ComponentModel.ISupportInitialize)numPageLimit).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numSpecificPage).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -170,5 +206,8 @@
         private NumericUpDown numPageLimit;
         private Label label1;
         private Label label2;
+        private NumericUpDown numSpecificPage;
+        private Label label3;
+        private Button btnDownloadSinglePage;
     }
 }

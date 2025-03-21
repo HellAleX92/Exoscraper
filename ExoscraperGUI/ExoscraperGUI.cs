@@ -37,6 +37,24 @@ namespace ExoscraperGUI
             downloaderProcess = RunEmbeddedScript("ExoscraperGUI.Resources.HTML_downloader.js", "HTML_downloader.js", arguments);
         }
 
+        private void btnDownloadSinglePage_Click(object sender, EventArgs e)
+        {
+            int targetPage = (int)numSpecificPage.Value;
+            if (targetPage <= 0)
+            {
+                AppendLog("Bitte eine gültige Seitennummer eingeben.");
+                return;
+            }
+
+            AppendLog($"Starte Download der Seite {targetPage}...");
+            downloaderProcess = RunEmbeddedScript(
+                "ExoscraperGUI.Resources.HTML_downloader.js",
+                "HTML_downloader.js",
+                targetPage.ToString()
+            );
+        }
+
+
         private void btnHTML2JSON_Click(object sender, EventArgs e)
         {
             html2JsonProcess = RunEmbeddedScript("ExoscraperGUI.Resources.HTML2JSON.js", "HTML2JSON.js");

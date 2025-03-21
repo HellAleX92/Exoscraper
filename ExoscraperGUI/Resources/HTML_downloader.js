@@ -2,13 +2,11 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
 
-// Verzeichnis für gespeicherte Seiten
 const PAGES_FOLDER = path.join(__dirname, "saved_pages");
 if (!fs.existsSync(PAGES_FOLDER)) {
     fs.mkdirSync(PAGES_FOLDER);
 }
 
-// Funktion zum Speichern der Seite
 async function savePageContent(page, pageNumber) {
     const content = await page.content();
     const filePath = path.join(PAGES_FOLDER, `page_${pageNumber}.html`);
@@ -16,13 +14,25 @@ async function savePageContent(page, pageNumber) {
     console.log(`Page ${pageNumber} saved: ${filePath}`);
 }
 
-// Hauptfunktion
 (async () => {
     const pageLimitArg = process.argv[2];
-    const pageLimit = pageLimitArg === "all" ? Infinity : parseInt(pageLimitArg, 10);
+    let targetPage = null;
+    let pageLimit = Infinity;
+
+    if (pageLimitArg === "all") {
+        pageLimit = Infinity;
+    } else if (!isNaN(parseInt(pageLimitArg, 10))) {
+        const parsedArg = parseInt(pageLimitArg, 10);
+        if (parsedArg <= 0) {
+            console.error("Invalid page number. Must be greater than 0.");
+            process.exit(1);
+        }
+        targetPage = parsedArg;
+        pageLimit = parsedArg;
+    }
 
     let browser;
-    let isSuccessful = true; // Erfolgsflag
+    let isSuccessful = true;
 
     try {
         browser = await chromium.launch({ headless: false });
@@ -52,6 +62,10 @@ async function savePageContent(page, pageNumber) {
         console.log(`Total Pages: ${totalPages}`);
 
         for (let currentPage = 1; currentPage <= Math.min(totalPages, pageLimit); currentPage++) {
+            if (targetPage && currentPage !== targetPage) {
+                continue;
+            }
+
             const pageUrl =
                 currentPage === 1
                     ? `${baseUrl}${urlParams}`
@@ -84,7 +98,6 @@ async function savePageContent(page, pageNumber) {
             }
         }
 
-        // Erfolg oder Fehler melden
         if (isSuccessful) {
             console.log("Process completed successfully! All pages were downloaded as expected.");
         } else {
