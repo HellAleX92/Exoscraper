@@ -113,6 +113,7 @@
             // numPageLimit
             // 
             numPageLimit.Location = new Point(249, 14);
+            numPageLimit.Maximum = new decimal(new int[] { 250, 0, 0, 0 });
             numPageLimit.Name = "numPageLimit";
             numPageLimit.Size = new Size(58, 23);
             numPageLimit.TabIndex = 7;
