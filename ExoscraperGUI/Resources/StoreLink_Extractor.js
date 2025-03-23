@@ -23,6 +23,8 @@ async function scrapeStoreLink(page, achievementLink) {
     try {
         console.log(`Navigating to ${achievementLink} to fetch store link...`);
         await page.goto(achievementLink, { waitUntil: "domcontentloaded" });
+        await page.waitForLoadState("networkidle");
+        await page.waitForTimeout(2000);
 
         const storeLink = await page.$eval(
             "dd > a[href*='microsoft.com/store/apps/']",
@@ -49,14 +51,13 @@ async function scrapeStoreData(page, achievementLink) {
         }
         console.log(`Navigating to store link ${storeLink} to fetch store data...`);
         await page.goto(storeLink, { waitUntil: "domcontentloaded" });
-        await page.waitForTimeout(2000); // Zusätzliche Wartezeit nach Laden der Seite
 
         try {
             await page.waitForSelector("button[aria-label*='kaufen'], button[aria-label*='Kostenlos'], button[aria-label*='Vorbestellen'], button[aria-label*='Verkauf für'], button[aria-disabled='true']", { timeout: 10000 });
             console.log("Button found.");
         } catch (error) {
             if (error.name === "TimeoutError") {
-                console.error(`Timeout beim Warten auf Button für: ${storeLink}`);
+                console.error(`Timeout waiting for button: ${storeLink}`);
                 return { storeLink, status: "timeout", price: "-", salePrice: "-" };
             } else {
                 throw error;
@@ -74,24 +75,24 @@ async function scrapeStoreData(page, achievementLink) {
             // 1. NICHT SEPARAT VERFÜGBAR -> delisted
             if ((buttonText?.includes("NICHT SEPARAT VERFÜGBAR") || isDisabled === "true")) {
                 status = "delisted";
-                console.log(`Status auf "delisted" gesetzt -> Store-Link: ${storeLink}`);
+                console.log(`Status set to "delisted" -> Store-Link: ${storeLink}`);
             }
             // 2 Installieren -> delisted
             else if (buttonText?.includes("Installieren") || ariaLabel?.includes("Installieren")) {
                 status = "delisted";
-                console.log(`Status auf "delisted" gesetzt -> Store-Link: ${storeLink}`);
+                console.log(`Status set to "delisted" -> Store-Link: ${storeLink}`);
             }
             // 3. Vorbestellen -> pre-order
             else if (buttonText?.includes("Vorbestellen") || ariaLabel?.includes("Vorbestellen")) {
                 status = "pre-order";
                 price = ariaLabel?.match(/\d+,\d+/)?.[0] || buttonText?.match(/\d+,\d+/)?.[0] || "-";
-                console.log(`Status auf "pre-order" gesetzt -> Store-Link: ${storeLink}`);
+                console.log(`Status set to "pre-order" -> Store-Link: ${storeLink}`);
             }
             // 4. Kostenlos -> free
             else if (ariaLabel?.includes("Kostenlos") || ariaLabel?.includes("Kostenlos+")) {
                 status = "free";
                 price = "0,00 €";
-                console.log(`Status auf "free" gesetzt -> Store-Link: ${storeLink}`);
+                console.log(`Status set to "free" -> Store-Link: ${storeLink}`);
             }
             // 5. Verkauf (Sale) -> sale
             else if (ariaLabel?.includes("Verkauf für")) {
@@ -99,23 +100,23 @@ async function scrapeStoreData(page, achievementLink) {
                 const parts = ariaLabel.split(" ");
                 price = parts[parts.indexOf("Originalpreis") + 1]; // Originalpreis
                 salePrice = parts[parts.indexOf("Verkauf") + 2]; // Rabattierter Preis
-                console.log(`Status auf "sale" gesetzt -> Store-Link: ${storeLink}`);
+                console.log(`Status set to "sale" -> Store-Link: ${storeLink}`);
             }
             // 6. Kaufen mit Preis -> regular
             else if (ariaLabel?.includes("kaufen") && /\d+,\d+/.test(ariaLabel)) {
                 status = "regular";
-                price = ariaLabel.match(/\d+,\d+/)?.[0] || "-"; // Preis extrahieren
-                console.log(`Status auf "regular" gesetzt -> Store-Link: ${storeLink}`);
+                price = ariaLabel.match(/\d+,\d+/)?.[0] || "-";
+                console.log(`Status set to "regular" -> Store-Link: ${storeLink}`);
             }
         }
 
         return { storeLink, status, price, salePrice };
 
     } catch (error) {
-        if (error.message.includes("net::")) {
-            console.error(`Netzwerkfehler beim Scraping der Store-Daten für ${achievementLink}: ${error}`);
+        if (error.message.includes("ERR:NET:")) {
+            console.error(`Networkerror while scraping Store-Data -> ${achievementLink}: ${error}`);
         } else {
-            console.error(`Unerwarteter Fehler beim Scraping der Store-Daten für ${achievementLink}: ${error}`);
+            console.error(`Unexpected error while scraping Store-Data -> ${achievementLink}: ${error}`);
         }
         return { storeLink: null, status: "error", price: "-", salePrice: "-" };
     }
@@ -135,14 +136,13 @@ async function processGames() {
     const context = await chromium.launchPersistentContext(userDataDir, {
         headless: false,
         args: [
-            '--disable-extensions-except=C:/Users/Alex/Downloads/uBlock0.chromium',
-            '--load-extension=C:/Users/Alex/Downloads/uBlock0.chromium',
+            '--disable-extensions-except=path/to/extension',
+            '--load-extension=path/to/extension',
         ],
-        viewport: { width: 1280, height: 720 }, // Füge die viewport-Einstellung hier ein
-        javaScriptEnabled: true
+        viewport: { width: 200, height: 200 },
     });
 
-    const page = await context.newPage(); // Seite im persistierenden Kontext erstellen
+    const page = await context.newPage();
 
     let allData = [];
     for (let i = 0; i < games.length; i++) {
@@ -151,8 +151,8 @@ async function processGames() {
         try {
             await page.goto(achievementLink, { waitUntil: "domcontentloaded" });
             await page.waitForLoadState("networkidle");
+            await page.waitForTimeout(5000);
 
-            // Store-Daten extrahieren
             const storeData = await scrapeStoreData(page, achievementLink);
             allData.push({
                 title,
@@ -166,7 +166,8 @@ async function processGames() {
             });
 
         } catch (error) {
-            console.error(`Fehler bei der Verarbeitung von ${title}: ${error.message}`);            allData.push({
+            console.error(`Fehler bei der Verarbeitung von ${title}: ${error.message}`);
+            allData.push({
                 title,
                 platforms,
                 totalAwards,
@@ -178,9 +179,8 @@ async function processGames() {
             });
         }
 
-        // Zwischenspeichern
-        if ((i + 1) % 5 === 0 || i === games.length - 1) {
-            const partialFile = path.join(PARTIAL_FOLDER, `partial_${Math.floor(i / 5) + 1}.json`);
+        if ((i + 1) % 500 === 0 || i === games.length - 1) {
+            const partialFile = path.join(PARTIAL_FOLDER, `partial_${Math.floor(i / 500) + 1}.json`);
             fs.writeFileSync(partialFile, JSON.stringify(allData, null, 2), "utf-8");
             console.log(`Intermediate save to file: ${partialFile}`);
             allData = [];
@@ -203,7 +203,7 @@ function mergePartialsToCSV() {
     });
 
     const csvContent =
-        "Title,Platforms,Total Awards,Total Points,Microsoft Store Link,Status,Price,Sale Price\n" +
+        "Title,Platforms,Total Achievements,Total Gamerscore,Microsoft Store Link,Status,Price,Sale Price\n" +
         allData
             .map((data) => {
                 const title = data.title || "";
