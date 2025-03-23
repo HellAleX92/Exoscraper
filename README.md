@@ -1,6 +1,6 @@
 non-multilingual. german website support only as for now (no button translation implemented)
 
-for using dev options (and therefore ad blocker) you got to launch chromium in persistent mode undder processGames.
+for using dev options (and therefore ad blocker) you got to launch chromium in persistent mode under processGames.
 
     const context = await chromium.launchPersistentContext(userDataDir, {
         headless: false,
