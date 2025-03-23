@@ -18,6 +18,7 @@
     <EmbeddedResource Include="Resources\HTML2JSON.js" />
     <EmbeddedResource Include="Resources\HTML_downloader.js" />
     <EmbeddedResource Include="Resources\StoreLink_Extractor.js" />
+    <EmbeddedResource Include="Resources\StoreLink_Extractor.js.bak" />
   </ItemGroup>
   
   <ItemGroup>
