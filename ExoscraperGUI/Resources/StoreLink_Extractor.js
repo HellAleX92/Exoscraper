@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const fetch = require("node-fetch").default;
 const { chromium } = require("playwright");
 
 const INPUT_JSON = path.join(__dirname, "game_data_with_details.json");
@@ -21,7 +22,6 @@ function ensureDirectoryExists(dir) {
 
 async function scrapeStoreLink(page, achievementLink) {
     try {
-        console.log(`Navigating to ${achievementLink} to fetch store link...`);
         await page.goto(achievementLink, { waitUntil: "domcontentloaded" });
         await page.waitForLoadState("networkidle");
         await page.waitForTimeout(2000);
@@ -32,14 +32,115 @@ async function scrapeStoreLink(page, achievementLink) {
         ).catch(() => null);
 
         if (!storeLink) {
-            console.warn(`Store link missing for ${achievementLink}. Retrying...`);
-            return { storeLink: null, status: "delisted", price: "-", salePrice: "-" };
+            console.warn(`Store link missing for ${achievementLink}.`);
+            return null;
         }
 
+        console.log(`Store link fetched: ${storeLink}`);
         return storeLink;
     } catch (error) {
-        console.error(`Error while fetching the store link for ${achievementLink}: ${error}`);
-        return { storeLink: null, status: "error", price: "-", salePrice: "-" };
+        console.error(`Error while fetching the store link for ${achievementLink}: ${error.message}`);
+        return null;
+    }
+}
+
+function extractProductID(storeLink) {
+    try {
+        const url = new URL(storeLink);
+        const productId = url.pathname.split("/").pop();
+        // console.log(`Extracted ProductID: ${productId}`);
+        return productId;
+    } catch (error) {
+        console.error(`Failed to extract ProductID from StoreLink: ${storeLink}`);
+        return null;
+    }
+}
+
+function findProductAndPrices(data, targetProductID) {
+    if (!data || typeof data !== "object") return null;
+
+    if (data.ProductId === targetProductID) {
+        const price = data.Price || 0; 
+        const displayPrice = data.DisplayPrice || "";
+        const strikethroughPrice = data.StrikethroughPrice || "-"; 
+
+       // console.log(`[DEBUG] Found Product -> ProductID: ${data.ProductId}, Price: ${price}, DisplayPrice: ${displayPrice}, StrikethroughPrice: ${strikethroughPrice}`);
+        return { price, displayPrice, strikethroughPrice, product: data };
+    }
+
+    for (const key in data) {
+        if (Array.isArray(data[key])) {
+            for (const item of data[key]) {
+                const result = findProductAndPrices(item, targetProductID);
+                if (result) return result;
+            }
+        } else if (typeof data[key] === "object") {
+            const result = findProductAndPrices(data[key], targetProductID);
+            if (result) return result;
+        }
+    }
+
+    return null;
+}
+
+function cleanAndParse(value) {
+    if (!value) return 0;
+    const cleanedValue = value.toString().replace(/[^\d.,-]/g, "").replace(",", ".");
+    return parseFloat(cleanedValue) || 0;
+}
+
+async function fetchProductData(productId) {
+    const apiUrl = `https://storeedgefd.dsx.mp.microsoft.com/v9.0/products/${productId}?market=DE&locale=de-de&deviceFamily=Windows.Desktop`;
+    try {
+        console.log(`Fetching product data for ProductID: ${productId} from API...`);
+        const response = await fetch(apiUrl);
+
+        if (!response.ok) {
+            console.warn(`API returned an error for ProductID ${productId}: ${response.status}`);
+            return { productId, status: "error", price: "-", strikethroughPrice: "-" };
+        }
+
+        const data = await response.json();
+
+        const result = findProductAndPrices(data, productId);
+        if (!result) {
+            console.error(`ProductID not found or no prices available for ProductID: ${productId}`);
+            return { productId, status: "error", price: "-", strikethroughPrice: "-" };
+        }
+
+        const { price, displayPrice, strikethroughPrice } = result;
+
+        const numericPrice = cleanAndParse(price);
+        const numericDisplayPrice = cleanAndParse(displayPrice);
+        const numericStrikethroughPrice = cleanAndParse(strikethroughPrice);
+
+        // console.log(`[DEBUG] Cleaned Prices -> Price: ${numericPrice}, DisplayPrice: ${numericDisplayPrice}, StrikethroughPrice: ${numericStrikethroughPrice}`);
+
+        let status;
+        if (numericPrice === 0 && (displayPrice === "" || displayPrice.toLowerCase() === "installieren")) {
+            status = "delisted";
+        } else if (displayPrice.toLowerCase() === "kostenlos") {
+            status = "free";
+        } else if (numericDisplayPrice !== 0 && numericDisplayPrice === numericPrice && numericDisplayPrice !== numericStrikethroughPrice) {
+            status = "sale";
+        } else if (numericPrice === 0 && numericStrikethroughPrice > 0) {
+            status = "regular";
+        } else if (numericPrice > 0 && numericDisplayPrice > 0) {
+            status = "regular";
+        } else if (numericDisplayPrice !== 0 && numericDisplayPrice === numericPrice) {
+            status = "regular";
+        } else {
+            status = "error";
+        }
+
+        const salePrice = status === "sale" ? strikethroughPrice : "-";
+        const originalPrice = status === "sale" ? displayPrice : "-";
+
+        console.log(`[DEBUG] Final Status -> ProductID: ${productId}, Status: ${status}, SalePrice: ${salePrice}, OriginalPrice: ${originalPrice}`);
+        return { productId, status, price: salePrice, strikethroughPrice: originalPrice };
+    } catch (error) {
+        console.error(`Error fetching product data for ProductID ${productId}: ${error.message}`);
+        return { productId, status: "error", price: "-", strikethroughPrice: "-" };
     }
 }
 
@@ -49,75 +150,23 @@ async function scrapeStoreData(page, achievementLink) {
         if (!storeLink) {
             return { storeLink: null, status: "delisted", price: "-", salePrice: "-" };
         }
-        console.log(`Navigating to store link ${storeLink} to fetch store data...`);
-        await page.goto(storeLink, { waitUntil: "domcontentloaded" });
 
-        try {
-            await page.waitForSelector("button[aria-label*='kaufen'], button[aria-label*='Kostenlos'], button[aria-label*='Vorbestellen'], button[aria-label*='Verkauf für'], button[aria-disabled='true']", { timeout: 10000 });
-            console.log("Button found.");
-        } catch (error) {
-            if (error.name === "TimeoutError") {
-                console.error(`Timeout waiting for button: ${storeLink}`);
-                return { storeLink, status: "timeout", price: "-", salePrice: "-" };
-            } else {
-                throw error;
-            }
+        const productId = extractProductID(storeLink);
+        if (!productId) {
+            return { storeLink, status: "error", price: "-", salePrice: "-" };
         }
 
-        const buttons = await page.locator("button").elementHandles();
-        let status = null, price = "-", salePrice = "-";
+        const productData = await fetchProductData(productId);
 
-        for (const button of buttons) {
-            const ariaLabel = await button.getAttribute("aria-label");
-            const buttonText = await button.innerText();
-            const isDisabled = await button.getAttribute("aria-disabled");
-
-            // 1. NICHT SEPARAT VERFÜGBAR -> delisted
-            if ((buttonText?.includes("NICHT SEPARAT VERFÜGBAR") || isDisabled === "true")) {
-                status = "delisted";
-                console.log(`Status set to "delisted" -> Store-Link: ${storeLink}`);
-            }
-            // 2 Installieren -> delisted
-            else if (buttonText?.includes("Installieren") || ariaLabel?.includes("Installieren")) {
-                status = "delisted";
-                console.log(`Status set to "delisted" -> Store-Link: ${storeLink}`);
-            }
-            // 3. Vorbestellen -> pre-order
-            else if (buttonText?.includes("Vorbestellen") || ariaLabel?.includes("Vorbestellen")) {
-                status = "pre-order";
-                price = ariaLabel?.match(/\d+,\d+/)?.[0] || buttonText?.match(/\d+,\d+/)?.[0] || "-";
-                console.log(`Status set to "pre-order" -> Store-Link: ${storeLink}`);
-            }
-            // 4. Kostenlos -> free
-            else if (ariaLabel?.includes("Kostenlos") || ariaLabel?.includes("Kostenlos+")) {
-                status = "free";
-                price = "0,00 €";
-                console.log(`Status set to "free" -> Store-Link: ${storeLink}`);
-            }
-            // 5. Verkauf (Sale) -> sale
-            else if (ariaLabel?.includes("Verkauf für")) {
-                status = "sale";
-                const parts = ariaLabel.split(" ");
-                price = parts[parts.indexOf("Originalpreis") + 1]; // Originalpreis
-                salePrice = parts[parts.indexOf("Verkauf") + 2]; // Rabattierter Preis
-                console.log(`Status set to "sale" -> Store-Link: ${storeLink}`);
-            }
-            // 6. Kaufen mit Preis -> regular
-            else if (ariaLabel?.includes("kaufen") && /\d+,\d+/.test(ariaLabel)) {
-                status = "regular";
-                price = ariaLabel.match(/\d+,\d+/)?.[0] || "-";
-                console.log(`Status set to "regular" -> Store-Link: ${storeLink}`);
-            }
-        }
-
-        return { storeLink, status, price, salePrice };
+        return {
+            storeLink,
+            status: productData.status,
+            price: productData.price,
+            salePrice: productData.strikethroughPrice,
+        };
 
     } catch (error) {
-        if (error.message.includes("ERR:NET:")) {
-            console.error(`Networkerror while scraping Store-Data -> ${achievementLink}: ${error}`);
-        } else {
-            console.error(`Unexpected error while scraping Store-Data -> ${achievementLink}: ${error}`);
-        }
+        console.error(`Error during scrapeStoreData for AchievementLink: ${achievementLink} -> ${error.message}`);
         return { storeLink: null, status: "error", price: "-", salePrice: "-" };
     }
 }
@@ -132,8 +181,7 @@ async function processGames() {
     }
 
     console.log("Starting processing of List...");
-    const userDataDir = './user-data';
-    const context = await chromium.launchPersistentContext(userDataDir, {
+    const context = await chromium.launchPersistentContext('./user-data', {
         headless: false,
         args: [
             '--disable-extensions-except=path/to/extension',
@@ -143,17 +191,16 @@ async function processGames() {
     });
 
     const page = await context.newPage();
-
     let allData = [];
+
     for (let i = 0; i < games.length; i++) {
         const { achievementLink, title, platforms, totalAwards, totalPoints } = games[i];
 
         try {
-            await page.goto(achievementLink, { waitUntil: "domcontentloaded" });
-            await page.waitForLoadState("networkidle");
-            await page.waitForTimeout(5000);
+            console.log(`[PROCESSING] Game: ${title}`);
 
             const storeData = await scrapeStoreData(page, achievementLink);
+
             allData.push({
                 title,
                 platforms,
@@ -166,7 +213,7 @@ async function processGames() {
             });
 
         } catch (error) {
-            console.error(`Fehler bei der Verarbeitung von ${title}: ${error.message}`);
+            console.error(`Error processing game ${title}: ${error.message}`);
             allData.push({
                 title,
                 platforms,
@@ -179,23 +226,22 @@ async function processGames() {
             });
         }
 
-        if ((i + 1) % 500 === 0 || i === games.length - 1) {
-            const partialFile = path.join(PARTIAL_FOLDER, `partial_${Math.floor(i / 500) + 1}.json`);
+        if ((i + 1) % 5 === 0 || i === games.length - 1) {
+            const partialFile = path.join(PARTIAL_FOLDER, `partial_${Math.floor(i / 5) + 1}.json`);
             fs.writeFileSync(partialFile, JSON.stringify(allData, null, 2), "utf-8");
-            console.log(`Intermediate save to file: ${partialFile}`);
+            console.log(`[SAVE] Intermediate save to file: ${partialFile}`);
             allData = [];
         }
     }
 
     await context.close();
-
     mergePartialsToCSV();
 }
 
 function mergePartialsToCSV() {
     const partialFiles = fs.readdirSync(PARTIAL_FOLDER).filter((file) => file.endsWith(".json"));
-    const allData = [];
 
+    const allData = [];
     partialFiles.forEach((file) => {
         const partialData = JSON.parse(fs.readFileSync(path.join(PARTIAL_FOLDER, file), "utf-8"));
         allData.push(...partialData);
@@ -219,7 +265,7 @@ function mergePartialsToCSV() {
             .join("\n");
 
     fs.writeFileSync(OUTPUT_CSV, csvContent, "utf-8");
-    console.log(`Final data successfully saved to ${OUTPUT_CSV}.`);
+    console.log(`[FINAL] CSV successfully saved to ${OUTPUT_CSV}.`);
 }
 
 if (!args.includes("--merge-csv")) {
