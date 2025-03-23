@@ -1,7 +1,4 @@
-- windows 10 games not support (only apps.microsoft.com links)
-- german store support only (xbox.com/de-DE/)
+- german store support only
 - no support for other stores for now (future update)
-- frequent network errors
-- frequent navigation errors
-- extremely slow due to timeouts preventing network errors (they still happen though)
+- regular and sale price are messed up. will fix someday. delisted and free entires will work though.
 - ... more to come
