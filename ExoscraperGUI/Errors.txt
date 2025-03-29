@@ -1,4 +1,4 @@
 - german store support only
 - no support for other stores for now (future update)
-- free games and some unreleased games will show as undefined (null) in the csv. will fix itself as soon as the games are released..
+- regular and sale price are messed up. will fix someday. delisted and free entires will work though.
 - ... more to come
