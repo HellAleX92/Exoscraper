@@ -48,7 +48,6 @@ function extractProductID(storeLink) {
     try {
         const url = new URL(storeLink);
         const productId = url.pathname.split("/").pop();
-        // console.log(`Extracted ProductID: ${productId}`);
         return productId;
     } catch (error) {
         console.error(`Failed to extract ProductID from StoreLink: ${storeLink}`);
@@ -56,91 +55,106 @@ function extractProductID(storeLink) {
     }
 }
 
-function findProductAndPrices(data, targetProductID) {
-    if (!data || typeof data !== "object") return null;
-
-    if (data.ProductId === targetProductID) {
-        const price = data.Price || 0; 
-        const displayPrice = data.DisplayPrice || "";
-        const strikethroughPrice = data.StrikethroughPrice || "-"; 
-
-       // console.log(`[DEBUG] Found Product -> ProductID: ${data.ProductId}, Price: ${price}, DisplayPrice: ${displayPrice}, StrikethroughPrice: ${strikethroughPrice}`);
-        return { price, displayPrice, strikethroughPrice, product: data };
-    }
-
-    for (const key in data) {
-        if (Array.isArray(data[key])) {
-            for (const item of data[key]) {
-                const result = findProductAndPrices(item, targetProductID);
-                if (result) return result;
-            }
-        } else if (typeof data[key] === "object") {
-            const result = findProductAndPrices(data[key], targetProductID);
-            if (result) return result;
-        }
-    }
-
-    return null;
-}
-
-function cleanAndParse(value) {
-    if (!value) return 0;
-    const cleanedValue = value.toString().replace(/[^\d.,-]/g, "").replace(",", ".");
-    return parseFloat(cleanedValue) || 0;
-}
-
 async function fetchProductData(productId) {
-    const apiUrl = `https://storeedgefd.dsx.mp.microsoft.com/v9.0/products/${productId}?market=DE&locale=de-de&deviceFamily=Windows.Desktop`;
+    const apiUrl = `https://displaycatalog.mp.microsoft.com/v7.0/products?bigIds=${productId}&market=de&languages=de-de`;
     try {
         console.log(`Fetching product data for ProductID: ${productId} from API...`);
         const response = await fetch(apiUrl);
 
         if (!response.ok) {
             console.warn(`API returned an error for ProductID ${productId}: ${response.status}`);
-            return { productId, status: "error", price: "-", strikethroughPrice: "-" };
+            return { productId, status: "error", MSRP: "-", ListPrice: "-", TitleID: "-" };
         }
 
         const data = await response.json();
+        const product = data?.Products?.[0];
 
-        const result = findProductAndPrices(data, productId);
-        if (!result) {
-            console.error(`ProductID not found or no prices available for ProductID: ${productId}`);
-            return { productId, status: "error", price: "-", strikethroughPrice: "-" };
+        if (!product) {
+            console.error(`No product data available for ProductID: ${productId}`);
+            return { productId, status: "not listed", MSRP: "-", ListPrice: "-", TitleID: "-" };
         }
 
-        const { price, displayPrice, strikethroughPrice } = result;
+        const availability = product.DisplaySkuAvailabilities?.[0]?.Availabilities?.[0];
+        if (!availability) {
+            console.error(`No valid availability data found for ProductID ${productId}`);
+            return { productId, status: "not listed", MSRP: "-", ListPrice: "-", TitleID: "-" };
+        }
 
-        const numericPrice = cleanAndParse(price);
-        const numericDisplayPrice = cleanAndParse(displayPrice);
-        const numericStrikethroughPrice = cleanAndParse(strikethroughPrice);
+        const actions = availability.Actions || [];
+        const preOrderReleaseDate = availability?.Properties?.PreOrderReleaseDate;
+        const isPreOrder = preOrderReleaseDate ? new Date(preOrderReleaseDate) > new Date() : false;
 
-        // console.log(`[DEBUG] Cleaned Prices -> Price: ${numericPrice}, DisplayPrice: ${numericDisplayPrice}, StrikethroughPrice: ${numericStrikethroughPrice}`);
+        const msrp = availability.OrderManagementData?.Price?.MSRP || 0;
+        const listPrice = availability.OrderManagementData?.Price?.ListPrice || msrp;
+        const wholesalePrice = availability.OrderManagementData?.Price?.WholesalePrice || 0;
+        const wholesaleCurrencyCode = availability.OrderManagementData?.Price?.WholesaleCurrencyCode || "";
+        const titleID = product.AlternateIds?.find(id => id.IdType === "XboxTitleId")?.Value || "-";
 
-        let status;
-        if (numericPrice === 0 && (displayPrice === "" || displayPrice.toLowerCase() === "installieren")) {
+        let status, salePrice = "-";
+
+        if (isPreOrder) {
+            status = "pre order";
+        } else if (actions.length === 2 && actions.includes("Details") && actions.includes("Redeem")) {
             status = "delisted";
-        } else if (displayPrice.toLowerCase() === "kostenlos") {
-            status = "free";
-        } else if (numericDisplayPrice !== 0 && numericDisplayPrice === numericPrice && numericDisplayPrice !== numericStrikethroughPrice) {
+        } else if (
+            msrp === 0 &&
+            listPrice === 0 &&
+            (wholesaleCurrencyCode === "")
+        ) {
+            if (
+                actions.length === 5 &&
+                actions.includes("Details") &&
+                actions.includes("Browse") &&
+                actions.includes("Curate") &&
+                actions.includes("Fulfill") &&
+                actions.includes("Redeem")
+            ) {
+                status = "not available yet";
+            }
+        } else if (
+            msrp === 0 &&
+            listPrice === 0 &&
+            wholesalePrice === 0 &&
+            (wholesaleCurrencyCode === "" || wholesaleCurrencyCode === "EUR")
+        ) {
+            if (
+                actions.length === 3 &&
+                actions.includes("Details") &&
+                actions.includes("Fulfill") &&
+                actions.includes("Redeem")
+            ) {
+                status = "free";
+            } else if (
+                actions.length === 4 &&
+                actions.includes("Details") &&
+                actions.includes("Fulfill") &&
+                actions.includes("Redeem") &&
+                actions.includes("Purchase")
+            ) {
+                status = "free";
+            } else if (
+                actions.length === 6 &&
+                actions.includes("Details") &&
+                actions.includes("Fulfill") &&
+                actions.includes("Redeem") &&
+                actions.includes("Purchase") &&
+                actions.includes("Browse") &&
+                actions.includes("Curate")
+            ) {
+                status = "free";
+            }
+        } else if (msrp !== listPrice) {
             status = "sale";
-        } else if (numericPrice === 0 && numericStrikethroughPrice > 0) {
-            status = "regular";
-        } else if (numericPrice > 0 && numericDisplayPrice > 0) {
-            status = "regular";
-        } else if (numericDisplayPrice !== 0 && numericDisplayPrice === numericPrice) {
-            status = "regular";
+            salePrice = listPrice;
         } else {
-            status = "error";
+            status = "regular";
         }
 
-        const salePrice = status === "sale" ? strikethroughPrice : "-";
-        const originalPrice = status === "sale" ? displayPrice : "-";
-
-        console.log(`[DEBUG] Final Status -> ProductID: ${productId}, Status: ${status}, SalePrice: ${salePrice}, OriginalPrice: ${originalPrice}`);
-        return { productId, status, price: salePrice, strikethroughPrice: originalPrice };
+        console.log(`[DEBUG] ProductID: ${productId}, TitleID: ${titleID}, MSRP: ${msrp}, ListPrice: ${listPrice}, Status: ${status}`);
+        return { productId, status, MSRP: msrp, ListPrice: listPrice, SalePrice: salePrice, TitleID: titleID };
     } catch (error) {
         console.error(`Error fetching product data for ProductID ${productId}: ${error.message}`);
-        return { productId, status: "error", price: "-", strikethroughPrice: "-" };
+        return { productId, status: "error", MSRP: "-", ListPrice: "-", TitleID: "-" };
     }
 }
 
@@ -148,12 +162,12 @@ async function scrapeStoreData(page, achievementLink) {
     try {
         const storeLink = await scrapeStoreLink(page, achievementLink);
         if (!storeLink) {
-            return { storeLink: null, status: "delisted", price: "-", salePrice: "-" };
+            return { storeLink: null, status: "error", MSRP: "-", ListPrice: "-", WholesalePrice: "-", IsPreOrder: false, TitleID: "-" };
         }
 
         const productId = extractProductID(storeLink);
         if (!productId) {
-            return { storeLink, status: "error", price: "-", salePrice: "-" };
+            return { storeLink, status: "error", MSRP: "-", ListPrice: "-", WholesalePrice: "-", IsPreOrder: false, TitleID: "-" };
         }
 
         const productData = await fetchProductData(productId);
@@ -161,13 +175,15 @@ async function scrapeStoreData(page, achievementLink) {
         return {
             storeLink,
             status: productData.status,
-            price: productData.price,
-            salePrice: productData.strikethroughPrice,
+            MSRP: productData.MSRP,
+            ListPrice: productData.ListPrice,
+            WholesalePrice: productData.WholesalePrice,
+            IsPreOrder: productData.IsPreOrder,
+            TitleID: productData.TitleID,
         };
-
     } catch (error) {
         console.error(`Error during scrapeStoreData for AchievementLink: ${achievementLink} -> ${error.message}`);
-        return { storeLink: null, status: "error", price: "-", salePrice: "-" };
+        return { storeLink: null, status: "error", MSRP: "-", ListPrice: "-", WholesalePrice: "-", IsPreOrder: false, TitleID: "-" };
     }
 }
 
@@ -184,8 +200,8 @@ async function processGames() {
     const context = await chromium.launchPersistentContext('./user-data', {
         headless: false,
         args: [
-            '--disable-extensions-except=path/to/extension',
-            '--load-extension=path/to/extension',
+            '--disable-extensions-except=c:/users/alex/downloads/uBlock0.chromium',
+            '--load-extension=c:/users/alex/downloads/uBlock0.chromium',
         ],
         viewport: { width: 200, height: 200 },
     });
@@ -207,9 +223,10 @@ async function processGames() {
                 totalAwards,
                 totalPoints,
                 storeLink: storeData.storeLink,
+                titleID: storeData.TitleID || "-",
                 status: storeData.status,
-                price: storeData.price,
-                salePrice: storeData.salePrice,
+                price: storeData.MSRP,
+                salePrice: storeData.ListPrice,
             });
 
         } catch (error) {
@@ -220,6 +237,7 @@ async function processGames() {
                 totalAwards,
                 totalPoints,
                 storeLink: null,
+                titleID: "-",
                 status: "error",
                 price: "-",
                 salePrice: "-",
@@ -249,7 +267,7 @@ function mergePartialsToCSV() {
     });
 
     const csvContent =
-        "Title,Platforms,Total Achievements,Total Gamerscore,Microsoft Store Link,Status,Price,Sale Price\n" +
+        "Title,Platforms,Total Achievements,Total Gamerscore,Microsoft Store Link,TitleID,Status,Price,Sale Price\n" +
         allData
             .map((data) => {
                 const title = data.title || "";
@@ -257,10 +275,11 @@ function mergePartialsToCSV() {
                 const totalAwards = data.totalAwards || 0;
                 const totalPoints = data.totalPoints || 0;
                 const storeLink = data.storeLink || "";
+                const titleID = data.titleID || "-";
                 const status = data.status || "";
                 const price = data.price || "-";
                 const salePrice = data.salePrice || "-";
-                return `"${title}","${platforms}","${totalAwards}","${totalPoints}","${storeLink}","${status}","${price}","${salePrice}"`;
+                return `"${title}","${platforms}","${totalAwards}","${totalPoints}","${storeLink}","${titleID}","${status}","${price}","${salePrice}"`;
             })
             .join("\n");
 
