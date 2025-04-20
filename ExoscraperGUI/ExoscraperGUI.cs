@@ -46,7 +46,7 @@ namespace ExoscraperGUI
                 return;
             }
 
-            AppendLog($"Starte Download der Seite {targetPage}...");
+            AppendLog($"Starting download of site {targetPage}...");
             downloaderProcess = RunEmbeddedScript(
                 "ExoscraperGUI.Resources.HTML_downloader.js",
                 "HTML_downloader.js",
@@ -161,7 +161,10 @@ namespace ExoscraperGUI
                 };
 
                 nodeProcess.OutputDataReceived += (s, args) => AppendLog(args.Data);
-                nodeProcess.ErrorDataReceived += (s, args) => AppendLog($"Error: {args.Data}");
+                nodeProcess.ErrorDataReceived += (s, args) => {
+                    if (!string.IsNullOrEmpty(args.Data))
+                        AppendLog($"Error: {args.Data}");
+                };
 
                 nodeProcess.Start();
                 nodeProcess.BeginOutputReadLine();

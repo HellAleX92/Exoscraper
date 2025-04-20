@@ -53,7 +53,9 @@ function extractGameData(filePath) {
 }
 
 async function processHtmlFiles() {
-    const files = fs.readdirSync(PAGES_FOLDER).filter((file) => file.endsWith(".html"));
+    const files = fs.readdirSync(PAGES_FOLDER)
+        .filter((file) => file.endsWith(".html"))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
     console.log("Starting file processing...");
 
@@ -85,5 +87,9 @@ async function processHtmlFiles() {
 }
 
 processHtmlFiles().catch((error) => {
-    console.error("An error occurred:", error);
+    if (error && Object.keys(error).length > 0) {
+        console.error("An error occurred:", error);
+    } else {
+        console.log("No relevant error information available.");
+    }
 });
